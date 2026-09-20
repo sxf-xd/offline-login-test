@@ -24,11 +24,11 @@
 <div id="qrInfo" class="status">尚未读取二维码。请开启摄像头或选择二维码图片。</div>
 <h2>输入参数</h2>
 <div class="row">
-<div><label>用户名（固定）</label><input id="username" value="qr_demo_user" readonly></div>
+<div><label>用户名（固定）</label><input id="username" value="123456" readonly></div>
 <div><label>学科</label><select id="subject"><option value="phy">物理 phy</option><option value="chem">化学 chem</option><option value="bio">生物 bio</option><option value="sci">小学科学 sci</option></select></div>
 </div>
 <div class="row">
-<div><label>密码（固定）</label><input id="password" value="demo-pass" readonly></div>
+<div><label>密码（固定）</label><input id="password" value="123" readonly></div>
 <div><label>生物学段</label><select id="bioGrade"><option value="junior">初中</option><option value="senior">高中</option></select></div>
 </div>
 <div class="row">
@@ -46,7 +46,7 @@
 </main>
 <script>
 const PIDS={phy:{junior:"CZWlTE4lVgz9",senior:"GZWLcJQXfD9W"},chem:{junior:"CZHXNDZHTa75",senior:"GZHXXV8IClkO"},bio:{junior:"JuFhE84jRhEh",senior:"EjEViMk33jNr"},sci:{junior:"iwjngieNGEAiEI2"}};
-const FIXED_USERNAME="qr_demo_user",FIXED_PASSWORD="demo-pass";
+const FIXED_USERNAME="123456",FIXED_PASSWORD="123";
 let stream=null,scanTimer=null,detecting=false,lastState=null,qrRawText="",qrPayload={};
 const $=id=>document.getElementById(id);
 function msg(text,kind){const el=$(kind==="result"?"resultStatus":"qrInfo");el.textContent=text;el.className="status "+(kind||"");}
