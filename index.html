@@ -29,7 +29,7 @@
 </div>
 <div class="row">
 <div><label>密码（固定）</label><input id="password" value="123" readonly></div>
-<div><label>生物学段</label><select id="bioGrade"><option value="junior">初中</option><option value="senior">高中</option></select></div>
+<div id="bioGradeWrap"><label>生物学段（仅选择生物时需要）</label><select id="bioGrade"><option value="junior">初中</option><option value="senior">高中</option></select></div>
 </div>
 <div class="row">
 <div><label>初中 VIP 天数</label><input id="juniorDays" inputmode="numeric" value="360"></div>
@@ -37,8 +37,8 @@
 </div>
 <label>原始用户 ID（8 位数字，本地生成模式使用）</label>
 <input id="rawUserId" inputmode="numeric" maxlength="8" value="94905685">
-<label>真实 20 位登录码（填写后优先解析它）</label>
-<input id="loginCode" inputmode="numeric" maxlength="20" placeholder="可留空，留空则生成本地测试码">
+<label>生成的登录码</label>
+<input id="generatedCode" class="code" readonly placeholder="扫描二维码后点击生成">
 <div class="actions"><button id="generate">生成完整 JSON</button><button class="secondary" id="copy">复制 JSON</button></div>
 <div id="resultStatus" class="status">等待生成</div>
 <label>完整输出 JSON</label>
@@ -61,8 +61,10 @@ function makeCode(prefix,junior,senior,raw){if(!/^\d{2}$/.test(prefix))throw Err
 function parseCode(code,expected){code=code.replace(/[\s-]/g,"");if(!/^\d{20}$/.test(code))throw Error("登录码必须是 20 位数字");if(expected&&code.slice(0,2)!==expected)throw Error("登录码前缀与二维码 c 不一致");const c=checksum(code.slice(0,18));if(code.slice(18)!==c)throw Error("登录码校验失败，期望末尾 "+c);const junior=Number(code.slice(2,6)),senior=Number(code.slice(6,10)),raw=code.slice(10,18);return{code,junior_days:junior,senior_days:senior,raw_user_id:raw,user_id:raw.replace(/^0*/,"")||"0",school_id:code.slice(14,20)}}
 function vip(days,now){return{vip:days>0?1:0,vip_endtime:now+days*86400}}
 function buildUser(username,p,subject,bioGrade){const now=Math.floor(Date.now()/1000),j=p.junior_days,s=p.senior_days;let info;if(subject==="bio"){const g=bioGrade==="senior"?"senior":"junior";info={[PIDS.bio[g]]:vip(g==="junior"?j:s,now)}}else if(subject==="sci"){info={[PIDS.sci.junior]:vip(j,now)}}else{info={[PIDS[subject].junior]:vip(j,now),[PIDS[subject].senior]:vip(s,now)}}const appkey=md5(p.user_id+"nobookaceR2343");return{off_line_login:1,username,nickname:username,user_id:p.user_id,shoolId:p.school_id,appkey,vip:j>0&&s>0?1:0,vip_level:1,lq:0,bind_phone:0,vip_info:info}}
+function formatCode(code){return code.match(/.{1,4}/g).join("-")}
 $("start").onclick=startCamera;$("stop").onclick=stopCamera;$("username").value=FIXED_USERNAME;$("password").value=FIXED_PASSWORD;
+function updateBioGradeVisibility(){$("bioGradeWrap").style.display=$("subject").value==="bio"?"block":"none"}$("subject").onchange=updateBioGradeVisibility;updateBioGradeVisibility();
 $("qrFile").onchange=()=>{const f=$("qrFile").files[0];if(!f)return;const img=new Image();img.onload=()=>{if(!decodeImage(img))msg("图片中没有识别到二维码；可以尝试提高截图清晰度。","error")};img.src=URL.createObjectURL(f)};
-$("generate").onclick=()=>{try{const qr=qrPayload,prefix=String(qr.c||"87"),subject=$("subject").value,username=FIXED_USERNAME,codeInput=$("loginCode").value.trim();if(!qr.c&&!codeInput)throw Error("请先扫描二维码或选择二维码图片");let p,code;if(codeInput){p=parseCode(codeInput,qr.c?String(qr.c):null);code=codeInput.replace(/[\\s-]/g,"")}else{const j=Number($("juniorDays").value),s=Number($("seniorDays").value),raw=$("rawUserId").value.trim();code=makeCode(prefix,j,s,raw);p=parseCode(code,prefix)}const user=buildUser(username,p,subject,$("bioGrade").value);lastState={qr:{text:qrRawText,datas:qr},loginCode:code,userInfo:user,localStorage:{loginType:"offline",appKey:user.appkey}};$("output").value=JSON.stringify(lastState,null,2);msg("生成成功；重启恢复验证：PASS","success")}catch(e){msg(e.message,"error")}};
+$("generate").onclick=()=>{try{const qr=qrPayload,prefix=String(qr.c||"87"),subject=$("subject").value,username=FIXED_USERNAME;if(!qr.c)throw Error("请先扫描二维码或选择二维码图片");const j=Number($("juniorDays").value),s=Number($("seniorDays").value),raw=$("rawUserId").value.trim();const code=makeCode(prefix,j,s,raw),p=parseCode(code,prefix);const user=buildUser(username,p,subject,$("bioGrade").value);$("generatedCode").value=formatCode(code);lastState={qr:{text:qrRawText,datas:qr},loginCode:code,userInfo:user,localStorage:{loginType:"offline",appKey:user.appkey}};$("output").value=JSON.stringify(lastState,null,2);msg("生成成功；重启恢复验证：PASS","success")}catch(e){msg(e.message,"error")}};
 $("copy").onclick=async()=>{if(!$("output").value){msg("请先生成 JSON","error");return}try{await navigator.clipboard.writeText($("output").value);msg("JSON 已复制到剪贴板","success")}catch(e){$("output").select();document.execCommand("copy");msg("JSON 已复制","success")}};
 </script></body></html>
