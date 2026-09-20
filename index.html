@@ -14,7 +14,7 @@
 </head>
 <body><main>
 <h1>离线登录本地测试</h1>
-<div class="hint">全部计算在本页完成。未填写真实登录码时，生成的是本地测试码，不会被真实服务器接受。</div>
+<div class="hint">扫描二维码后，点击“生成”即可得到本地离线登录码。</div>
 <h2>二维码</h2>
 <div class="actions"><button id="start">开启摄像头扫描</button><button class="secondary" id="stop">停止摄像头</button></div>
 <video id="video" class="camera" playsinline muted></video>
@@ -35,24 +35,20 @@
 <div><label>初中 VIP 天数</label><input id="juniorDays" inputmode="numeric" value="360"></div>
 <div><label>高中 VIP 天数</label><input id="seniorDays" inputmode="numeric" value="360"></div>
 </div>
-<label>原始用户 ID（8 位数字，本地生成模式使用）</label>
-<input id="rawUserId" inputmode="numeric" maxlength="8" value="94905685">
 <label>生成的登录码</label>
 <input id="generatedCode" class="code" readonly placeholder="扫描二维码后点击生成">
-<div class="actions"><button id="generate">生成完整 JSON</button><button class="secondary" id="copy">复制 JSON</button></div>
+<button id="generate">生成</button>
 <div id="resultStatus" class="status">等待生成</div>
-<label>完整输出 JSON</label>
-<textarea id="output" readonly></textarea>
 </main>
 <script>
 const PIDS={phy:{junior:"CZWlTE4lVgz9",senior:"GZWLcJQXfD9W"},chem:{junior:"CZHXNDZHTa75",senior:"GZHXXV8IClkO"},bio:{junior:"JuFhE84jRhEh",senior:"EjEViMk33jNr"},sci:{junior:"iwjngieNGEAiEI2"}};
-const FIXED_USERNAME="123456",FIXED_PASSWORD="123";
-let stream=null,scanTimer=null,detecting=false,lastState=null,qrRawText="",qrPayload={};
+const FIXED_USERNAME="123456",FIXED_PASSWORD="123",FIXED_RAW_USER_ID="94905685";
+let stream=null,scanTimer=null,detecting=false,qrPayload={};
 const $=id=>document.getElementById(id);
 function msg(text,kind){const el=$(kind==="result"?"resultStatus":"qrInfo");el.textContent=text;el.className="status "+(kind||"");}
 function md5(s){if(!window.CryptoJS)throw Error("MD5 库未加载，请检查网络");return CryptoJS.MD5(s).toString();}
 function checksum(first18){const sorted=first18.split("").sort((a,b)=>Number(b)-Number(a)).join("");const h=md5(sorted);return String(h.charCodeAt(0)%10)+String(h.charCodeAt(1)%10)}
-function parseQrText(text){let raw=text.trim(),data;try{if(raw.startsWith("{")){data=JSON.parse(raw)}else{const u=new URL(raw);const d=u.searchParams.get("datas");if(!d)throw Error("二维码中没有 datas 参数");data=JSON.parse(d)}}catch(e){throw Error("二维码识别失败："+e.message)}if(!data||typeof data!=="object")throw Error("二维码数据无效");if(!data.c||!/^[0-9]{2}$/.test(String(data.c)))throw Error("二维码缺少有效的 c 前缀");qrRawText=text;qrPayload=data;$('qrInfo').textContent="二维码已读取（前缀 c："+String(data.c)+"）";$('qrInfo').className="status success";return data}
+function parseQrText(text){let raw=text.trim(),data;try{if(raw.startsWith("{")){data=JSON.parse(raw)}else{const u=new URL(raw);const d=u.searchParams.get("datas");if(!d)throw Error("二维码中没有 datas 参数");data=JSON.parse(d)}}catch(e){throw Error("二维码识别失败："+e.message)}if(!data||typeof data!=="object")throw Error("二维码数据无效");if(!data.c||!/^[0-9]{2}$/.test(String(data.c)))throw Error("二维码缺少有效的 c 前缀");qrPayload={c:String(data.c)};$('qrInfo').textContent="二维码已读取（前缀 c："+String(data.c)+"）";$('qrInfo').className="status success";return data}
 function decodeImage(img){const canvas=$("canvas"),ctx=canvas.getContext("2d",{willReadFrequently:true});canvas.width=img.naturalWidth||img.videoWidth;canvas.height=img.naturalHeight||img.videoHeight;ctx.drawImage(img,0,0,canvas.width,canvas.height);if(window.jsQR){const r=jsQR(ctx.getImageData(0,0,canvas.width,canvas.height).data,canvas.width,canvas.height,{inversionAttempts:"attemptBoth"});if(r&&r.data){parseQrText(r.data);return true}}return false}
 async function decodeFrame(){if(detecting||!stream)return;detecting=true;try{if(window.BarcodeDetector){const b=new BarcodeDetector({formats:["qr_code"]});const found=await b.detect($("video"));if(found.length){parseQrText(found[0].rawValue);stopCamera();return}}const v=$("video"),canvas=$("canvas"),ctx=canvas.getContext("2d",{willReadFrequently:true});if(v.readyState>=2&&window.jsQR){canvas.width=v.videoWidth;canvas.height=v.videoHeight;ctx.drawImage(v,0,0,canvas.width,canvas.height);const r=jsQR(ctx.getImageData(0,0,canvas.width,canvas.height).data,canvas.width,canvas.height,{inversionAttempts:"attemptBoth"});if(r&&r.data){parseQrText(r.data);stopCamera();return}}}catch(e){msg("摄像头识别失败："+e.message,"error")}finally{detecting=false}if(stream)scanTimer=requestAnimationFrame(decodeFrame)}
 async function startCamera(){try{if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw Error("当前页面不支持摄像头 API；请改用选择二维码图片");stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});$("video").srcObject=stream;$("video").style.display="block";await $("video").play();decodeFrame()}catch(e){msg("无法开启摄像头："+e.message+"\\n如果是 iPhone，请用 HTTPS 页面打开并允许相机权限。","error")}}
@@ -65,6 +61,5 @@ function formatCode(code){return code.match(/.{1,4}/g).join("-")}
 $("start").onclick=startCamera;$("stop").onclick=stopCamera;$("username").value=FIXED_USERNAME;$("password").value=FIXED_PASSWORD;
 function updateBioGradeVisibility(){$("bioGradeWrap").style.display=$("subject").value==="bio"?"block":"none"}$("subject").onchange=updateBioGradeVisibility;updateBioGradeVisibility();
 $("qrFile").onchange=()=>{const f=$("qrFile").files[0];if(!f)return;const img=new Image();img.onload=()=>{if(!decodeImage(img))msg("图片中没有识别到二维码；可以尝试提高截图清晰度。","error")};img.src=URL.createObjectURL(f)};
-$("generate").onclick=()=>{try{const qr=qrPayload,prefix=String(qr.c||"87"),subject=$("subject").value,username=FIXED_USERNAME;if(!qr.c)throw Error("请先扫描二维码或选择二维码图片");const j=Number($("juniorDays").value),s=Number($("seniorDays").value),raw=$("rawUserId").value.trim();const code=makeCode(prefix,j,s,raw),p=parseCode(code,prefix);const user=buildUser(username,p,subject,$("bioGrade").value);$("generatedCode").value=formatCode(code);lastState={qr:{text:qrRawText,datas:qr},loginCode:code,userInfo:user,localStorage:{loginType:"offline",appKey:user.appkey}};$("output").value=JSON.stringify(lastState,null,2);msg("生成成功；重启恢复验证：PASS","success")}catch(e){msg(e.message,"error")}};
-$("copy").onclick=async()=>{if(!$("output").value){msg("请先生成 JSON","error");return}try{await navigator.clipboard.writeText($("output").value);msg("JSON 已复制到剪贴板","success")}catch(e){$("output").select();document.execCommand("copy");msg("JSON 已复制","success")}};
+$("generate").onclick=()=>{try{const qr=qrPayload,prefix=String(qr.c||"87");if(!qr.c)throw Error("请先扫描二维码或选择二维码图片");const j=Number($("juniorDays").value),s=Number($("seniorDays").value);const code=makeCode(prefix,j,s,FIXED_RAW_USER_ID);parseCode(code,prefix);$("generatedCode").value=formatCode(code);msg("生成成功","success")}catch(e){msg(e.message,"error")}};
 </script></body></html>
