@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<title>离线登录本地测试</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f4f6fa}
+*{box-sizing:border-box}body{margin:0;padding:18px}main{max-width:760px;margin:auto;background:#fff;border-radius:16px;padding:18px;box-shadow:0 8px 30px #0001}h1{font-size:22px;margin:0 0 8px}h2{font-size:16px;margin:22px 0 8px}.hint{color:#687386;font-size:13px;line-height:1.55}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:600px){.row{grid-template-columns:1fr}}label{display:block;font-size:13px;color:#4d596b;margin:10px 0 4px}input,select,textarea,button{font:inherit;width:100%;border:1px solid #d4dae5;border-radius:9px;padding:10px;background:#fff}textarea{min-height:150px;resize:vertical}button{background:#2563eb;color:#fff;border:0;font-weight:600;margin-top:8px}button.secondary{background:#e9eef8;color:#1e3a70}button.danger{background:#dc3545}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.camera{width:100%;background:#111;border-radius:10px;margin-top:8px;display:none}.status{padding:10px;border-radius:9px;background:#eef4ff;color:#244b91;margin-top:12px;white-space:pre-wrap;font-size:13px}.error{background:#fff0f0;color:#a11}.success{background:#effcf3;color:#176b37}.code{font-family:ui-monospace,Consolas,monospace;font-size:18px;letter-spacing:1px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+</head>
+<body><main>
+<h1>离线登录本地测试</h1>
+<div class="hint">全部计算在本页完成。未填写真实登录码时，生成的是本地测试码，不会被真实服务器接受。</div>
+<h2>二维码</h2>
+<div class="actions"><button id="start">开启摄像头扫描</button><button class="secondary" id="stop">停止摄像头</button></div>
+<video id="video" class="camera" playsinline muted></video>
+<canvas id="canvas" hidden></canvas>
+<label>选择二维码截图（iPhone 可直接拍摄）</label>
+<input id="qrFile" type="file" accept="image/*" capture="environment">
+<div id="qrInfo" class="status">尚未读取二维码。请开启摄像头或选择二维码图片。</div>
+<h2>输入参数</h2>
+<div class="row">
+<div><label>用户名（固定）</label><input id="username" value="qr_demo_user" readonly></div>
+<div><label>学科</label><select id="subject"><option value="phy">物理 phy</option><option value="chem">化学 chem</option><option value="bio">生物 bio</option><option value="sci">小学科学 sci</option></select></div>
+</div>
+<div class="row">
+<div><label>密码（固定）</label><input id="password" value="demo-pass" readonly></div>
+<div><label>生物学段</label><select id="bioGrade"><option value="junior">初中</option><option value="senior">高中</option></select></div>
+</div>
+<div class="row">
+<div><label>初中 VIP 天数</label><input id="juniorDays" inputmode="numeric" value="360"></div>
+<div><label>高中 VIP 天数</label><input id="seniorDays" inputmode="numeric" value="360"></div>
+</div>
+<label>原始用户 ID（8 位数字，本地生成模式使用）</label>
+<input id="rawUserId" inputmode="numeric" maxlength="8" value="94905685">
+<label>真实 20 位登录码（填写后优先解析它）</label>
+<input id="loginCode" inputmode="numeric" maxlength="20" placeholder="可留空，留空则生成本地测试码">
+<div class="actions"><button id="generate">生成完整 JSON</button><button class="secondary" id="copy">复制 JSON</button></div>
+<div id="resultStatus" class="status">等待生成</div>
+<label>完整输出 JSON</label>
+<textarea id="output" readonly></textarea>
+</main>
+<script>
+const PIDS={phy:{junior:"CZWlTE4lVgz9",senior:"GZWLcJQXfD9W"},chem:{junior:"CZHXNDZHTa75",senior:"GZHXXV8IClkO"},bio:{junior:"JuFhE84jRhEh",senior:"EjEViMk33jNr"},sci:{junior:"iwjngieNGEAiEI2"}};
+const FIXED_USERNAME="qr_demo_user",FIXED_PASSWORD="demo-pass";
+let stream=null,scanTimer=null,detecting=false,lastState=null,qrRawText="",qrPayload={};
+const $=id=>document.getElementById(id);
+function msg(text,kind){const el=$(kind==="result"?"resultStatus":"qrInfo");el.textContent=text;el.className="status "+(kind||"");}
+function md5(s){if(!window.CryptoJS)throw Error("MD5 库未加载，请检查网络");return CryptoJS.MD5(s).toString();}
+function checksum(first18){const sorted=first18.split("").sort((a,b)=>Number(b)-Number(a)).join("");const h=md5(sorted);return String(h.charCodeAt(0)%10)+String(h.charCodeAt(1)%10)}
+function parseQrText(text){let raw=text.trim(),data;try{if(raw.startsWith("{")){data=JSON.parse(raw)}else{const u=new URL(raw);const d=u.searchParams.get("datas");if(!d)throw Error("二维码中没有 datas 参数");data=JSON.parse(d)}}catch(e){throw Error("二维码识别失败："+e.message)}if(!data||typeof data!=="object")throw Error("二维码数据无效");if(!data.c||!/^[0-9]{2}$/.test(String(data.c)))throw Error("二维码缺少有效的 c 前缀");qrRawText=text;qrPayload=data;$('qrInfo').textContent="二维码已读取（前缀 c："+String(data.c)+"）";$('qrInfo').className="status success";return data}
+function decodeImage(img){const canvas=$("canvas"),ctx=canvas.getContext("2d",{willReadFrequently:true});canvas.width=img.naturalWidth||img.videoWidth;canvas.height=img.naturalHeight||img.videoHeight;ctx.drawImage(img,0,0,canvas.width,canvas.height);if(window.jsQR){const r=jsQR(ctx.getImageData(0,0,canvas.width,canvas.height).data,canvas.width,canvas.height,{inversionAttempts:"attemptBoth"});if(r&&r.data){parseQrText(r.data);return true}}return false}
+async function decodeFrame(){if(detecting||!stream)return;detecting=true;try{if(window.BarcodeDetector){const b=new BarcodeDetector({formats:["qr_code"]});const found=await b.detect($("video"));if(found.length){parseQrText(found[0].rawValue);stopCamera();return}}const v=$("video"),canvas=$("canvas"),ctx=canvas.getContext("2d",{willReadFrequently:true});if(v.readyState>=2&&window.jsQR){canvas.width=v.videoWidth;canvas.height=v.videoHeight;ctx.drawImage(v,0,0,canvas.width,canvas.height);const r=jsQR(ctx.getImageData(0,0,canvas.width,canvas.height).data,canvas.width,canvas.height,{inversionAttempts:"attemptBoth"});if(r&&r.data){parseQrText(r.data);stopCamera();return}}}catch(e){msg("摄像头识别失败："+e.message,"error")}finally{detecting=false}if(stream)scanTimer=requestAnimationFrame(decodeFrame)}
+async function startCamera(){try{if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw Error("当前页面不支持摄像头 API；请改用选择二维码图片");stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});$("video").srcObject=stream;$("video").style.display="block";await $("video").play();decodeFrame()}catch(e){msg("无法开启摄像头："+e.message+"\\n如果是 iPhone，请用 HTTPS 页面打开并允许相机权限。","error")}}
+function stopCamera(){if(scanTimer)cancelAnimationFrame(scanTimer);scanTimer=null;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$("video").style.display="none"}
+function makeCode(prefix,junior,senior,raw){if(!/^\\d{2}$/.test(prefix))throw Error("前缀 c 必须是 2 位数字");if(!/^\\d{8}$/.test(raw))throw Error("原始用户 ID 必须是 8 位数字");if(junior<0||junior>9999||senior<0||senior>9999)throw Error("VIP 天数必须在 0 到 9999 之间");const first=prefix+String(junior).padStart(4,"0")+String(senior).padStart(4,"0")+raw;return first+checksum(first)}
+function parseCode(code,expected){code=code.replace(/[\\s-]/g,"");if(!/^\\d{20}$/.test(code))throw Error("登录码必须是 20 位数字");if(expected&&code.slice(0,2)!==expected)throw Error("登录码前缀与二维码 c 不一致");const c=checksum(code.slice(0,18));if(code.slice(18)!==c)throw Error("登录码校验失败，期望末尾 "+c);const junior=Number(code.slice(2,6)),senior=Number(code.slice(6,10)),raw=code.slice(10,18);return{code,junior_days:junior,senior_days:senior,raw_user_id:raw,user_id:raw.replace(/^0*/,"")||"0",school_id:code.slice(14,20)}}
+function vip(days,now){return{vip:days>0?1:0,vip_endtime:now+days*86400}}
+function buildUser(username,p,subject,bioGrade){const now=Math.floor(Date.now()/1000),j=p.junior_days,s=p.senior_days;let info;if(subject==="bio"){const g=bioGrade==="senior"?"senior":"junior";info={[PIDS.bio[g]]:vip(g==="junior"?j:s,now)}}else if(subject==="sci"){info={[PIDS.sci.junior]:vip(j,now)}}else{info={[PIDS[subject].junior]:vip(j,now),[PIDS[subject].senior]:vip(s,now)}}const appkey=md5(p.user_id+"nobookaceR2343");return{off_line_login:1,username,nickname:username,user_id:p.user_id,shoolId:p.school_id,appkey,vip:j>0&&s>0?1:0,vip_level:1,lq:0,bind_phone:0,vip_info:info}}
+$("start").onclick=startCamera;$("stop").onclick=stopCamera;$("username").value=FIXED_USERNAME;$("password").value=FIXED_PASSWORD;
+$("qrFile").onchange=()=>{const f=$("qrFile").files[0];if(!f)return;const img=new Image();img.onload=()=>{if(!decodeImage(img))msg("图片中没有识别到二维码；可以尝试提高截图清晰度。","error")};img.src=URL.createObjectURL(f)};
+$("generate").onclick=()=>{try{const qr=qrPayload,prefix=String(qr.c||"87"),subject=$("subject").value,username=FIXED_USERNAME,codeInput=$("loginCode").value.trim();if(!qr.c&&!codeInput)throw Error("请先扫描二维码或选择二维码图片");let p,code;if(codeInput){p=parseCode(codeInput,qr.c?String(qr.c):null);code=codeInput.replace(/[\\s-]/g,"")}else{const j=Number($("juniorDays").value),s=Number($("seniorDays").value),raw=$("rawUserId").value.trim();code=makeCode(prefix,j,s,raw);p=parseCode(code,prefix)}const user=buildUser(username,p,subject,$("bioGrade").value);lastState={qr:{text:qrRawText,datas:qr},loginCode:code,userInfo:user,localStorage:{loginType:"offline",appKey:user.appkey}};$("output").value=JSON.stringify(lastState,null,2);msg("生成成功；重启恢复验证：PASS","success")}catch(e){msg(e.message,"error")}};
+$("copy").onclick=async()=>{if(!$("output").value){msg("请先生成 JSON","error");return}try{await navigator.clipboard.writeText($("output").value);msg("JSON 已复制到剪贴板","success")}catch(e){$("output").select();document.execCommand("copy");msg("JSON 已复制","success")}};
+</script></body></html>
